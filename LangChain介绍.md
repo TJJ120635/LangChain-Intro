@@ -722,7 +722,7 @@ tsne = TSNE(n_components=2, random_state=0, perplexity=2)
 embeddings_tsne = tsne.fit_transform(embeddings)
 ```
 
-![](D:\文档\笔记\GPT\可视化.png)
+![](embedding_visualize.png)
 
 #### 结合 LangChain 测试
 
