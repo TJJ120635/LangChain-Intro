@@ -513,7 +513,7 @@ for para in paragraphs:
     documents.append(new_doc)
 ```
 
-### 6.4 文档持久化
+### 6.4 文档 Embedding 持久化
 
 这些 Documents 需要变成文件保存起来
 
@@ -521,23 +521,53 @@ LangChain 提供了一个向量数据库 Chroma
 
 需要安装 `pip install tiktoken`
 
-将 documents 传入 Chroma，用 OpenAI 接口做成 Embeddings，然后持久化到 db 目录
+将 documents 传入 Chroma，用 OpenAI 接口做成 Embeddings，然后持久化到 db_openai 目录
 
 ```python
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.vectorstores import Chroma
 
 embedding = OpenAIEmbeddings()
-persist_directory = 'db'
+persist_directory = 'db_openai'
 
 vectordb = Chroma.from_documents(documents=documents, embedding=embedding, persist_directory=persist_directory)
 
 vectordb.persist()
 ```
 
-### 6.5 数据库读取
+### 6.5 本地 Embedding 
 
-用 Chroma.as_retriever 创建一个 retriever，作为数据库的检索其=器
+首先我们需要下载整个项目
+
+https://huggingface.co/shibing624/text2vec-base-chinese
+
+可能需要安装 text2vec 库，不知道是否必要
+
+```shell
+pip install text2vec
+```
+
+将 OpenAI Embedding 替换成本地 Embedding
+
+注意持久化目录，不同 Embedding 模型的目录需要区分，否则会在写入时报错
+
+（可以试一下改成 persist_directory = 'db_openai'，看看发生什么错误）
+
+```python
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.vectorstores import Chroma
+
+embedding = HuggingFaceEmbeddings(model_name=r'D:\Projects\text2vec-base-chinese')
+persist_directory = 'db_huggingface'
+
+vectordb = Chroma.from_documents(documents=documents, embedding=embedding, persist_directory=persist_directory)
+
+vectordb.persist()
+```
+
+### 6.6 数据库读取
+
+用 Chroma.as_retriever 创建一个 retriever，作为数据库的检索器
 
 ```python
 vectordb = Chroma(persist_directory='db', embedding_function=embedding)
@@ -698,6 +728,10 @@ pip install -U text2vec
 
 首先将整个项目和模型下载下来，用 text2vec 简单测试
 
+创建四个句子，前三个相对接近，最后一个无关
+
+变成四个 embeddings
+
 ```python
 from text2vec import SentenceModel
 
@@ -707,7 +741,7 @@ embeddings = model.encode(sentences)
 print(embeddings)
 ```
 
-让后让 GPT 酱帮我可视化
+让后让 GPT 酱帮我可视化四个 embeddings 的差异
 
 ```python
 import numpy as np
