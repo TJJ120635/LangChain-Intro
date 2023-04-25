@@ -299,7 +299,7 @@ HumanMessage 是人类用户对 gpt 的问答内容
 
 
 
-## 5. LangChain 的相关概念
+## 5. LangChain 的基本概念
 
 ### 5.1 Models
 
@@ -330,6 +330,8 @@ refine：总结1+doc2=总结2，总结2+doc3=总结3，......
 map_rerank：对每个 doc 计算匹配度，选择最高分数的 doc 给 llm 做回答
 
 ### 5.4 Agent
+
+https://zhuanlan.zhihu.com/p/619344042 详解
 
 LLM作为驾驶员，根据用户的输入动态调用 Chain/Tool
 
@@ -613,13 +615,33 @@ print(result)
 
 
 
-## 7. Document QA
+## 7. Document QA 详细说明
 
-这部分是对 simplepdf 的补充，基于官方示例，对整个读取文件进行 QA 的流程做详细说明
+这部分是对 simplepdf 的补充，基于官方文档，对整个读取文件进行 QA 的流程做详细说明
 
 https://python.langchain.com/en/latest/modules/chains/index_examples/qa_with_sources.html
 
-### 7.1 Document Loaders
+### 7.1 Indexes 总介绍
+
+LangChain 基于 index 对 documents 做匹配
+
+最基本的接口就是 retriever，根据 query 找到最相关的 k 个 documens
+
+对于非结构化数据，例如文档，可以用 index 和 retrieve 来索引
+
+而对于结构化数据，例如 csv，有相应数据类型的索引函数
+
+主要的部分：
+
+Document Loaders
+
+Text Splitters
+
+Vector Stores
+
+Retrievers
+
+### 7.2 Document Loaders
 
 https://python.langchain.com/en/latest/modules/indexes/document_loaders.html
 
@@ -639,11 +661,15 @@ https://python.langchain.com/en/latest/modules/indexes/document_loaders.html
 
 对于非结构化数据，像 图片、Youtube 链接，还没弄明白怎么加载
 
-### 7.2 文档分段
 
-如果使用预设的 Loader 工具保存结构数据，一行一个 Doc，我们不需要自己进行分段
 
-但是如果读取文档文件，例如一个 100 页的 PDF，我们不可能把全部内容一次性丢给 LLM
+官方预设了多种 Loader，每个 Loader 整合了第三方的库，例如 BS4、PyPDF 等，需要另外安装对应的库。可以自己使用这些库读取好文本，也可以直接用 Loader 加载
+
+### 7.3 Text Splitter
+
+如果用 Loader 加载结构化数据，一行一个 Doc，我们不需要自己进行分段
+
+但是如果读取非结构化数据，例如一个 100 页的 PDF，我们不可能把全部内容一次性丢给 LLM
 
 
 
@@ -651,15 +677,19 @@ https://python.langchain.com/en/latest/modules/indexes/document_loaders.html
 
 粗暴的划分方式是，直接按照长度将文章切开，可能会导致信息断开。理想的划分方式是，将相关的内容划分到同一个 Doc 里，保持上下文的完整性，但是需要对文章的语义做理解
 
+（看 LangChain 官方文档似乎也没有根据上下文进行分割，只是做了简单的长度分段）
+
 
 
 第一种划分方式，按照长度进行划分。将全篇文档拆成一句一句话，每次选择 N 句话组成一段，每段的总字数不超过 max_len
 
-第二种划分方式，按照文档信息进行划分。如果文档自己有章节信息，则找到里面的信息进行划分
+第二种划分方式，按照文档信息进行划分。如果文档自己有章节信息，则找到里面的章节进行划分
 
-第三种划分方式，使用 Splitter 进行划分：
+第三种划分方式，使用 Text Splitter 进行划分：
 
-LangChain 里整合了多种 Splitter，可以根据最大值等参数结合上下文对文章进行分段
+（按照知乎评论，默认 Splitter 对中文的理解能力不好。如果采用 Splitter 方式需要另外找中文适配的模型。不知道按长度划分方式和按 Splitter 划分方式的效果差别有多大）
+
+LangChain 里整合了多种 Text Splitter，对文章进行分段，有 chunk_size/chunk_overlap 等参数
 
 ```python
 from langchain.text_splitter import CharacterTextSplitter
@@ -672,11 +702,34 @@ texts = text_splitter.split_text(state_of_the_union)
 docsearch = Chroma.from_texts(texts, embeddings, metadatas=[{"source": str(i)} for i in range(len(texts))]).as_retriever()
 ```
 
+ 默认的选项就算 RecursiveCharacterTextSplitter
 
+根据换行 '\\n', '\\n\\n' 等，将文章分段，假设 chunk_size = 100，chunk_overlap = 10
 
-按照知乎评论，默认 Splitter 对中文的理解能力不好。如果采用 Splitter 方式需要另外找中文适配的模型。不知道按长度划分方式和按 Splitter 划分方式的效果差别有多大
+如果一个段小于 chunk 大小，则在一个 chunk 中装下尽可能多的段。例如三个段 30/65/20，chunk1 = 段 1+2，chunk2 = 段 3 
 
-### 7.3 创建 Index
+如果一个段大于 chunk 大小，那就分成两块，后面 chunk 的开头等于前面 chunk 的结尾
+
+```python
+# 原文
+'Madam Speaker, Madam Vice President, our First Lady and Second Gentleman. Members of Congress and the Cabinet. Justices of the Supreme Court. My fellow Americans.  \n\nLast year COVID-19 kept us apart. This year we are finally together again. \n\n'
+
+# 第一段太长，拆分成两个 chunk
+Document(page_content='Madam Speaker, Madam Vice President, our First Lady and Second Gentleman. Members of Congress and', metadata={})
+Document(page_content='of Congress and the Cabinet. Justices of the Supreme Court. My fellow Americans.', metadata={})
+# 第二段完整放进 chunk 里
+Document(page_content='Last year COVID-19 kept us apart. This year we are finally together again.', metadata={})
+```
+
+对于 chunk 长度计算，可以简单使用字符数，也可以使用 huggingface_tokenizer
+
+对于 Latex，有 LatexTextSplitter，可以根据 \\section \\subsection 之类的标识符来划分
+
+对于 Markdown，有 MarkdownTextSplitter，根据 # ## 等划分
+
+还有像 Python 代码等类型，也有智能划分工具
+
+### 7.4 创建 Index
 
 使用预设 Loader 加载数据，如果不需要手动划分，可以创建对应的索引
 
@@ -690,9 +743,29 @@ query = "What did the president say about Ketanji Brown Jackson"
 index.query(query)
 ```
 
-### 7.4 创建 Chain
+### 7.5 创建 Chain
 
-有两种 chain
+两种选项：
+
+with Sources：在回答里附上来源 Document，似乎是 ChatModel
+
+Retrieval：基于 VectorDB，但是没搞懂有什么不同
+
+```python
+from langchain.chains.question_answering import load_qa_chain
+chain = load_qa_chain(OpenAI(temperature=0), chain_type="stuff")
+
+from langchain.chains.qa_with_sources import load_qa_with_sources_chain
+chain = load_qa_with_sources_chain(OpenAI(temperature=0), chain_type="stuff")
+
+from langchain.chains import RetrievalQA
+qa = RetrievalQA.from_chain_type(llm=OpenAI(), chain_type="stuff", retriever=docsearch.as_retriever())
+
+from langchain.chains import RetrievalQAWithSourcesChain
+chain = RetrievalQAWithSourcesChain.from_chain_type(OpenAI(temperature=0), chain_type="stuff", retriever=docsearch.as_retriever())
+```
+
+选择 chain 并运行
 
 ```python
 from langchain.chains.question_answering import load_qa_chain
@@ -704,7 +777,7 @@ chain = load_qa_with_sources_chain(llm, chain_type="stuff")
 chain({"input_documents": docs, "question": query}, return_only_outputs=True)
 ```
 
-### 7.5 本地 Embedding
+### 7.6 本地 Embedding
 
 和 word embedding 不同，我们需要一个 text embedding 做整段的文本归纳
 
@@ -784,13 +857,49 @@ No sentence-transformers model found with name D:\Projects\text2vec-base-chinese
 
 需要重新开一个 db 文件夹
 
+### 7.7 Chat Models
+
+```python
+from langchain.prompts.chat import (
+    ChatPromptTemplate,
+    SystemMessagePromptTemplate,
+    AIMessagePromptTemplate,
+    HumanMessagePromptTemplate,
+)
+from langchain.schema import (
+    AIMessage,
+    HumanMessage,
+    SystemMessage
+)
+```
+
+编写 prompt 需要提供 SystemMessage 和 HumanMessage
+
+```python
+prompt=PromptTemplate(
+    template="You are a helpful assistant that translates {input_language} to {output_language}.",
+    input_variables=["input_language", "output_language"],
+)
+system_message_prompt = SystemMessagePromptTemplate(prompt=prompt)
+
+human_template="{text}"
+human_message_prompt = HumanMessagePromptTemplate.from_template(human_template)
+
+chat_prompt = ChatPromptTemplate.from_messages([system_message_prompt, human_message_prompt])
+# get a chat completion from the formatted messages
+chat(chat_prompt.format_prompt(input_language="English", output_language="French", text="I love programming.").to_messages())
+```
+
+还可以向 prompt 中提供 few shot 例子
+
+```
+example_human = HumanMessagePromptTemplate.from_template("Hi")
+example_ai = AIMessagePromptTemplate.from_template("Argh me mateys")
+
+chat_prompt = ChatPromptTemplate.from_messages([system_message_prompt, example_human, example_ai, human_message_prompt])
+```
+
 ## 8. 草稿区
-
-Agent 详解
-
-https://zhuanlan.zhihu.com/p/619344042
-
-https://zhuanlan.zhihu.com/p/623597862
 
 LangChain + ChatGLM
 
@@ -798,27 +907,11 @@ https://zhuanlan.zhihu.com/p/623004492
 
 https://zhuanlan.zhihu.com/p/622717995
 
-text_splitter对中文不太友好，句子被截断容易丢失上下文语义
-
 架构图
 
 https://zhuanlan.zhihu.com/p/613842066
 
-代码注入？
-
-https://zhuanlan.zhihu.com/p/622857981
-
-GPTCache
-
-https://zhuanlan.zhihu.com/p/6217
-
-## 9. OpenAI Document（待补充）
-
-爬取一个网页，将网页做成 Embeddings，基于 Embeddings 进行问答
-
-可以衡量distance of embeddings
-
-## 10. Prompt（待补充）
+## 9. Prompt（待补充）
 
 对 QA 机器人的 prompt 管理，很重要
 
