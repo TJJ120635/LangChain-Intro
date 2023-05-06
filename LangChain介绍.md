@@ -615,13 +615,127 @@ print(result)
 
 
 
-## 7. Document QA 详细说明
+## 7. LangChain + ChatGLM
+
+### 7.1 LangChain 引入 ChatGLM 类
+
+尽管 LangChain 支持了 OpenAI、LLaMA、GPT4ALL、Hugging Face 等多种模型，但是没有预设的 ChatGLM 类。因此需要自己创建一个类
+
+https://github.com/imClumsyPanda/langchain-ChatGLM
+
+类的实现参考 models/chatllm.py
+
+主要基于 LangChain 的 LLM 基类，创建了 ChatGLM 类
+
+定义 _call 和 load_model 方法
+
+（具体的方法参考 8.8 Custom LLM）
+
+```python
+from langchain.llms.base import LLM
+from typing import List
+from transformers import AutoTokenizer, AutoModel, AutoConfig
+import torch
+
+
+def torch_gc():
+    # with torch.cuda.device(DEVICE):
+    torch.cuda.empty_cache()
+    torch.cuda.ipc_collect()
+    
+
+class ChatGLM(LLM):
+    max_token: int = 10000
+    temperature: float = 0.01
+    top_p = 0.9
+    # history = []
+    tokenizer: object = None
+    model: object = None
+    history_len: int = 10
+
+    def __init__(self):
+        super().__init__()
+
+    @property
+    def _llm_type(self) -> str:
+        return "ChatGLM"
+
+    def _call(self,
+              prompt: str,
+              history: List[List[str]] = []):  # -> Tuple[str, List[List[str]]]:
+        response, _ = self.model.chat(
+            self.tokenizer,
+            prompt,
+            history=history[-self.history_len:] if self.history_len > 0 else [],
+            max_length=self.max_token,
+            temperature=self.temperature,
+        )
+        torch_gc()
+        history += [[prompt, response]]
+        yield response, history
+        torch_gc()
+
+    def load_model(self,
+                   model_name_or_path: str = 'chatglm-6b-int4',
+                   **kwargs):
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_name_or_path,
+            trust_remote_code=True
+        )
+        model_config = AutoConfig.from_pretrained(
+            model_name_or_path, 
+            trust_remote_code=True)
+        self.model = AutoModel.from_pretrained(
+            model_name_or_path, 
+            config=model_config, 
+            trust_remote_code=True,
+            **kwargs).half().cuda()
+        self.model = self.model.eval()
+```
+
+### 7.2 简单使用
+
+引入 ChatGLM 和引入 OpenAI 类似，但是需要加上一个 load_model 的步骤
+
+load_model 中已经默认将模型设置为 chatglm-6b-int4
+
+其实也可以将模型加载放到 init 的部分
+
+```python
+llm = OpenAI()
+
+llm = ChatGLM()
+llm.load_model()
+```
+
+调用需要使用 _call 函数
+
+同时在这个实现中，每次调用函数都会将 history 记录到 ChatGLM 类
+
+```python
+for resp, history in llm._call("你好", streaming=False):
+    print(resp)
+    print(history)
+    
+你好，我是 ChatGLM-6B，是清华大学KEG实验室和智谱AI公司于2023年共同训练的语言模型。我的任务是服务并帮助人类，但我并不是一个真实的人。
+[['你好', '你好👋！我是人工智能助手 ChatGLM-6B，很高兴见到你，欢迎问我任何问题。'], ['请介绍一下你自己', '你好，我是 ChatGLM-6B，是清华大学KEG实验室和智谱AI公司于2023年共同训练的语言模型。我的任务是服务并帮助人类，但我并不是一个真实的人。'], ['请介绍一下你自己', '你好，我是 ChatGLM-6B，是清华大学KEG实验室和智谱AI公司于2023年共同训练的语言模型。我的任务是服务并帮助人类，但我并不是一个真实的人。']]
+```
+
+## Todo:
+
+模型显存回收
+
+历史记录
+
+更新 chain
+
+## 8. Document QA 详细说明
 
 这部分是对 simplepdf 的补充，基于官方文档，对整个读取文件进行 QA 的流程做详细说明
 
 https://python.langchain.com/en/latest/modules/chains/index_examples/qa_with_sources.html
 
-### 7.1 Indexes 总介绍
+### 8.1 Indexes 总介绍
 
 LangChain 基于 index 对 documents 做匹配
 
@@ -641,7 +755,7 @@ Vector Stores
 
 Retrievers
 
-### 7.2 Document Loaders
+### 8.2 Document Loaders
 
 https://python.langchain.com/en/latest/modules/indexes/document_loaders.html
 
@@ -665,7 +779,7 @@ https://python.langchain.com/en/latest/modules/indexes/document_loaders.html
 
 官方预设了多种 Loader，每个 Loader 整合了第三方的库，例如 BS4、PyPDF 等，需要另外安装对应的库。可以自己使用这些库读取好文本，也可以直接用 Loader 加载
 
-### 7.3 Text Splitter
+### 8.3 Text Splitter
 
 如果用 Loader 加载结构化数据，一行一个 Doc，我们不需要自己进行分段
 
@@ -729,7 +843,7 @@ Document(page_content='Last year COVID-19 kept us apart. This year we are finall
 
 还有像 Python 代码等类型，也有智能划分工具
 
-### 7.4 创建 Index
+### 8.4 创建 Index
 
 使用预设 Loader 加载数据，如果不需要手动划分，可以创建对应的索引
 
@@ -743,7 +857,7 @@ query = "What did the president say about Ketanji Brown Jackson"
 index.query(query)
 ```
 
-### 7.5 创建 Chain
+### 8.5 创建 Chain
 
 两种选项：
 
@@ -777,7 +891,7 @@ chain = load_qa_with_sources_chain(llm, chain_type="stuff")
 chain({"input_documents": docs, "question": query}, return_only_outputs=True)
 ```
 
-### 7.6 本地 Embedding
+### 8.6 本地 Embedding
 
 和 word embedding 不同，我们需要一个 text embedding 做整段的文本归纳
 
@@ -857,7 +971,7 @@ No sentence-transformers model found with name D:\Projects\text2vec-base-chinese
 
 需要重新开一个 db 文件夹
 
-### 7.7 Chat Models
+### 8.7 Chat Models
 
 ```python
 from langchain.prompts.chat import (
@@ -899,7 +1013,126 @@ example_ai = AIMessagePromptTemplate.from_template("Argh me mateys")
 chat_prompt = ChatPromptTemplate.from_messages([system_message_prompt, example_human, example_ai, human_message_prompt])
 ```
 
-## 8. 草稿区
+### 8.8 Custom LLM
+
+由于 LangChain 没有整合 ChatGLM，因此我们需要自己编写 ChatGLM 类
+
+目标是像使用 OpenAI 接口一样使用 ChatGLM 模型
+
+https://python.langchain.com/en/latest/modules/models/llms/examples/custom_llm.html
+
+https://juejin.cn/post/7226157821708681277
+
+https://zhuanlan.zhihu.com/p/624240080
+
+创建一个自定义的 LLM 的模板是这样的：
+
+```python
+from typing import Any, List, Mapping, Optional
+
+from langchain.callbacks.manager import CallbackManagerForLLMRun
+from langchain.llms.base import LLM
+
+class CustomLLM(LLM):
+    
+    n: int
+        
+    @property
+    def _llm_type(self) -> str:
+        return "custom"
+    
+    def _call(
+        self,
+        prompt: str,
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+    ) -> str:
+        if stop is not None:
+            raise ValueError("stop kwargs are not permitted.")
+        return prompt[:self.n]
+    
+    @property
+    def _identifying_params(self) -> Mapping[str, Any]:
+        """Get the identifying parameters."""
+        return {"n": self.n}
+```
+
+只有 _call 函数是必须要定义的。通过将字符串输入 _call，返回输出结果
+
+加载模型则需要写入 init 方法或者单独创建一个函数
+
+还有 _llm_type, _identifying_params 等方法可以定义
+
+
+
+在使用 llm('Hello') 的时候
+
+首先会调用 _\_call\_\_，然后调用 generate，然后调用 _generate，然后调用 _call
+
+对于 LLM 来说，\_\_call\_\_ 函数决定了返回值是 str
+
+```python
+# langchain\llms\base.py
+class BaseLLM(BaseLanguageModel, ABC):
+# 276
+    def __call__(
+        self, prompt: str, stop: Optional[List[str]] = None, callbacks: Callbacks = None
+    ) -> str:
+        """Check Cache and run the LLM on the given prompt and input."""
+        return (
+            self.generate([prompt], stop=stop, callbacks=callbacks)
+            .generations[0][0]
+            .text
+        )
+# 170
+    def generate(
+        self,
+        prompts: List[str],
+        stop: Optional[List[str]] = None,
+        callbacks: Callbacks = None,
+    ) -> LLMResult:
+        # ...
+        if langchain.llm_cache is None or disregard_cache:
+            # ...
+            output = self._generate(prompts, stop=stop, run_manager=run_manager)
+# 365
+    def _generate(
+        self,
+        prompts: List[str],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+    ) -> LLMResult:
+        generations = []
+        for prompt in prompts:
+            text = self._call(prompt, stop=stop, run_manager=run_manager)
+            generations.append([Generation(text=text)])
+```
+
+而对于 ChatModel，\_\_call\_\_ 返回的是 BaseMessage
+
+```python
+# langchain\chat_models\base.py
+# 169
+    def __call__(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        callbacks: Callbacks = None,
+    ) -> BaseMessage:
+        generation = self.generate(
+            [messages], stop=stop, callbacks=callbacks
+        ).generations[0][0]
+        if isinstance(generation, ChatGeneration):
+            return generation.message
+        else:
+            raise ValueError("Unexpected generation type")
+```
+
+
+
+
+
+## 9. 草稿区
 
 LangChain + ChatGLM
 
@@ -911,8 +1144,21 @@ https://zhuanlan.zhihu.com/p/622717995
 
 https://zhuanlan.zhihu.com/p/613842066
 
-## 9. Prompt（待补充）
+Prompt 注入/中间人攻击
+
+https://zhuanlan.zhihu.com/p/624139892
+
+https://zhuanlan.zhihu.com/p/624584889
+
+## 10. Prompt（待补充）
 
 对 QA 机器人的 prompt 管理，很重要
 
 https://github.com/dair-ai/Prompt-Engineering-Guide
+
+对于 Tool 需要文字相关的说明
+
+对于 Agent 需要流程指引
+
+对于文本汇总需要让模型在限定范围内回答问题
+
