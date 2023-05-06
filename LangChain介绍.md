@@ -1,10 +1,12 @@
 [TOC]
 
-# LangChain + OpenAI
+# LangChain 介绍
 
 整体流程：
 
-<u>文档通过 pdf 读取 + 分词 + embedding 等工具，做成上下文</u>
+<u>文档通过 pdf 读取 + 分词 + 向量化 保存到数据库中</u>
+
+<u>根据提问检索数据库，找出相关上下文段落</u>
 
 <u>LangChain 将 上下文 + 提问 整合到一起，输入给 ada/davinci/chatgpt 等语言模型</u>
 
@@ -18,15 +20,9 @@ https://github.com/HappyGO2023/simple-chatpdf
 
 https://zhuanlan.zhihu.com/p/620422560
 
-快速上手：
+基于本地知识的 ChatGLM 应用实现
 
-1.准备环境
-
-3.试验 OpenAI 接口
-
-4.试验 ChatModels 接口
-
-6.simple-chatpdf
+https://github.com/imClumsyPanda/langchain-ChatGLM
 
 ## 1. 准备环境
 
@@ -34,9 +30,11 @@ https://zhuanlan.zhihu.com/p/620422560
 
 创建环境
 
+```shell
 conda activate -n chat python=3.9
+```
 
-换源
+conda 换源（可以跳过）
 
 ```
 conda config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/msys2/
@@ -78,13 +76,21 @@ pip install torch-2.0.0+cu117-cp39-cp39-win_amd64.whl
 
 ```shell
 # 一键安装
-pip install -r requirements.txt
-# 安装的依赖
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+# langchain依赖
 langchain
-openai
 PyPDF2
 chromadb
 tiktoken
+# openai依赖
+openai
+# chatglm依赖
+protobuf
+transformers==4.27.1
+cpm_kernels
+torch>=1.10
+sentencepiece
+accelerate
 ```
 
 如果后续调用 OpenAI 的时候报错，则需要降级 urllib3
