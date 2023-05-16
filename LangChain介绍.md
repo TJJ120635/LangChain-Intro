@@ -623,24 +623,41 @@ print(result)
 
 ## 7. LangChain + ChatGLM
 
-### 7.1 LangChain 引入 ChatGLM 类
+### 7.1 LangChain 引入 ChatGLM
+
+在前面我们将 OpenAI Embedding 换成了本地 Embedding 模型 text2vec-base-chinese
+
+接下来我们将 OpenAI LLM 换成本地 LLM 模型 ChatGLM-6B
+
+ChatGLM 的部署参考官方文档，这里不做详细介绍
+
+https://github.com/THUDM/ChatGLM-6B
+
+### 7.1.1 ChatGLM 类封装
 
 尽管 LangChain 支持了 OpenAI、LLaMA、GPT4ALL、Hugging Face 等多种模型，但是没有预设的 ChatGLM 类。因此需要自己创建一个类
 
+类的实现参考项目中的 models/chatllm.py
+
 https://github.com/imClumsyPanda/langchain-ChatGLM
 
-类的实现参考 models/chatllm.py
+基于 LangChain 的 LLM 基类，创建 ChatGLM 类
 
-主要基于 LangChain 的 LLM 基类，创建了 ChatGLM 类
+构造函数 \_\_init\_\_ 参考 ChatGLM 官方的加载，使用 transformers 库加载
 
-定义 _call 和 load_model 方法
+析构函数 \_\_del\_\_ 使用 torch.cuda.empty_cache() 手动回收显存，否则只有关闭程序才会释放
+
+调用函数 _call 根据 prompt 输出回答，输入输出都是字符串
 
 （具体的方法参考 8.8 Custom LLM）
 
 ```python
+# ChatGLM.py
+from typing import Any, List, Mapping, Optional
 from langchain.llms.base import LLM
-from typing import List
+from langchain.callbacks.manager import CallbackManagerForLLMRun
 from transformers import AutoTokenizer, AutoModel, AutoConfig
+
 import torch
 
 
@@ -654,86 +671,326 @@ class ChatGLM(LLM):
     max_token: int = 10000
     temperature: float = 0.01
     top_p = 0.9
-    # history = []
     tokenizer: object = None
     model: object = None
-    history_len: int = 10
 
-    def __init__(self):
+    def __init__(
+        self,
+        model_path: str = "chatglm-6b-int4",
+        **kwargs
+    ):
         super().__init__()
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_path,
+            trust_remote_code=True, 
+            revision=model_path
+        )
+        model_config = AutoConfig.from_pretrained(
+            model_path, 
+            trust_remote_code=True, 
+            revision=model_path
+        )
+        self.model = AutoModel.from_pretrained(
+            model_path, 
+            config=model_config, 
+            trust_remote_code=True, 
+            revision=model_path, 
+            **kwargs
+        ).half().cuda()
+        self.model = self.model.eval()
 
+    def __del__(self):
+        self.tokenizer = None
+        self.model = None
+
+        torch.cuda.empty_cache()        
+    
     @property
     def _llm_type(self) -> str:
         return "ChatGLM"
 
-    def _call(self,
-              prompt: str,
-              history: List[List[str]] = []):  # -> Tuple[str, List[List[str]]]:
+    def _call(
+        self, 
+        prompt: str,
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None
+    ) -> str:
+        if stop is not None:
+            raise ValueError("stop kwargs are not permitted.")
+        
         response, _ = self.model.chat(
             self.tokenizer,
             prompt,
-            history=history[-self.history_len:] if self.history_len > 0 else [],
+            history=[],
             max_length=self.max_token,
             temperature=self.temperature,
         )
         torch_gc()
-        history += [[prompt, response]]
-        yield response, history
-        torch_gc()
-
-    def load_model(self,
-                   model_name_or_path: str = 'chatglm-6b-int4',
-                   **kwargs):
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_name_or_path,
-            trust_remote_code=True
-        )
-        model_config = AutoConfig.from_pretrained(
-            model_name_or_path, 
-            trust_remote_code=True)
-        self.model = AutoModel.from_pretrained(
-            model_name_or_path, 
-            config=model_config, 
-            trust_remote_code=True,
-            **kwargs).half().cuda()
-        self.model = self.model.eval()
+        return response
 ```
 
-### 7.2 简单使用
+#### 7.1.2 ChatGLM 使用
 
-引入 ChatGLM 和引入 OpenAI 类似，但是需要加上一个 load_model 的步骤
+引入 ChatGLM 和引入 OpenAI 类似，只需要声明即可
 
-load_model 中已经默认将模型设置为 chatglm-6b-int4
-
-其实也可以将模型加载放到 init 的部分
+需要传入模型的路径
 
 ```python
 llm = OpenAI()
-
-llm = ChatGLM()
-llm.load_model()
+llm = ChatGLM(model_path='../models/chatglm-6b-int4')
 ```
 
-调用需要使用 _call 函数
-
-同时在这个实现中，每次调用函数都会将 history 记录到 ChatGLM 类
+调用只需要传入字符串
 
 ```python
-for resp, history in llm._call("你好", streaming=False):
-    print(resp)
-    print(history)
-    
+result = llm('你好')
+print(result)
+
 你好，我是 ChatGLM-6B，是清华大学KEG实验室和智谱AI公司于2023年共同训练的语言模型。我的任务是服务并帮助人类，但我并不是一个真实的人。
-[['你好', '你好👋！我是人工智能助手 ChatGLM-6B，很高兴见到你，欢迎问我任何问题。'], ['请介绍一下你自己', '你好，我是 ChatGLM-6B，是清华大学KEG实验室和智谱AI公司于2023年共同训练的语言模型。我的任务是服务并帮助人类，但我并不是一个真实的人。'], ['请介绍一下你自己', '你好，我是 ChatGLM-6B，是清华大学KEG实验室和智谱AI公司于2023年共同训练的语言模型。我的任务是服务并帮助人类，但我并不是一个真实的人。']]
 ```
 
-## Todo:
+### 7.2 由 PDF 建立向量数据库
 
-模型显存回收
+这部分是 6. simple-chatpdf 的扩展，将读取文档和建立向量数据库的流程封装起来
 
-历史记录
+![](img\向量数据库.png)
 
-更新 chain
+#### 7.2.1 封装 PDFLoader
+
+首先我们需要将 PDF 读取封装成函数形式
+
+输入是 pdf 的路径和 Document 的最大长度
+
+输出是切分得到的 Document 列表
+
+```python
+# PDFLoader.py
+import PyPDF2
+import re
+from langchain.docstore.document import Document
+
+
+def PDFLoader(pdf_path: str, max_len: int = 300) -> list:
+    with open(pdf_path, 'rb') as pdf_file:
+        pdf_reader = PyPDF2.PdfReader(pdf_file)
+
+        # Extract PDF content
+        pdf_content = ''.join(page.extract_text() for page in pdf_reader.pages)
+
+        # Clean up symbols
+        pdf_content = re.sub(r'\n+', '', pdf_content)
+        pdf_content = re.sub(r'\s+', ' ', pdf_content)
+
+        # Split into sentences
+        sentence_separator_pattern = re.compile('([；。！! \?？]+)')
+        sentences = [
+            element
+            for element in sentence_separator_pattern.split(pdf_content)
+            if not sentence_separator_pattern.match(element) and element
+        ]
+
+        # Merge sentences into paragraphs
+        paragraphs = []
+        current_length = 0
+        current_paragraph = ""
+
+        for sentence in sentences:
+            sentence_length = len(sentence)
+            if current_length + sentence_length <= max_len:
+                current_paragraph += sentence
+                current_length += sentence_length
+            else:
+                paragraphs.append(current_paragraph.strip())
+                current_paragraph = sentence
+                current_length = sentence_length
+
+        paragraphs.append(current_paragraph.strip())
+        
+        documents = []
+        metadata = {"source": pdf_path}
+        for para in paragraphs:
+            new_doc = Document(page_content=para, metadata=metadata)
+            documents.append(new_doc)
+
+    return documents
+```
+
+#### 7.2.2 创建向量数据库
+
+声明一个向量数据库，需要指定 embedding 模型和数据库的本地保存目录
+
+```python
+import os
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.vectorstores import Chroma
+
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+db_embedding = HuggingFaceEmbeddings(model_name='../models/text2vec-large-chinese/')
+db_directory = '../vectordb/db_DBQA'
+
+vectordb = Chroma(embedding_function=db_embedding, persist_directory=db_directory)
+```
+
+#### 7.2.3 添加文档到数据库
+
+在上一步中我们声明了 vectordb 作为 Chroma 数据库（新建的数据库或者已有的数据库都可以）
+
+使用 PDFLoader 将文档提取成 Document 列表，使用 add_documents 方法输入数据库
+
+在完成更改后需要使用 persist 方法保存到本地目录
+
+```python
+file_path = '../files/'
+file_list = ['2023中国市场招聘趋势.pdf',
+             '数据要素白皮书-2022.pdf',
+             '人工智能生成内容白皮书-2022.pdf']
+```
+
+一次输入一个文档：
+
+```python
+docs = []
+for file in file_list:
+    pdf_path = file_path + file
+    docs.extend(PDFLoader(pdf_path, max_len=200))
+
+vectordb.add_documents(docs)
+vectordb.persist()
+```
+
+ 一次输入多个文档：
+
+```python
+for file in file_list:
+    pdf_path = file_path + file
+    docs = PDFLoader(pdf_path, max_len=200)
+    vectordb.add_documents(docs)
+	vectordb.persist()
+```
+
+#### 7.2.4 查询数据库
+
+和 6.6 查询数据库 方法一致，只需要声明一个 vectordb，然后创建一个 retriever 读取即可
+
+```python
+vectordb = None
+vectordb = Chroma(embedding_function=db_embedding, persist_directory=db_directory)
+retriever = vectordb.as_retriever(search_kwargs={"k": 3})
+
+query = '介绍一下虚拟歌手洛天依'
+docs = retriever.get_relevant_documents(query)
+print(docs)
+```
+
+### 7.3 模型问答+对话历史
+
+对话历史使用 ConversationBufferMemory
+
+根据向量知识库回答使用 ConversationalRetrievalChain
+
+#### 7.3.1 ConversationBufferMemory
+
+模型加入对话历史的方式其实很简单，只需要在 prompt 前面加上每一轮的人类输出和AI输出即可。LangChain 官方提供了 Memory 功能，能够自动整合历史记录
+
+使用的时候只需要向 chain 里引入 memory 参数即可11111111111111111
+
+```python
+from langchain.memory import ConversationBufferMemory
+from langchain.llms import OpenAI
+from langchain.chains import ConversationChain
+
+llm = OpenAI(temperature=0)
+conversation = ConversationChain(
+    llm=llm, 
+    verbose=True, 
+    memory=ConversationBufferMemory()
+)
+
+conversation.predict(input="Hi there!")
+```
+
+#### 7.3.2 ConversationalRetrievalChain
+
+https://python.langchain.com/en/latest/modules/chains/index_examples/chat_vector_db.html
+
+这个 chain 和 RetrievalQAChain 差不多，都有基于向量数据库进行问答的功能，但是加上了对话历史
+
+使用也非常简单（其中 llm 和 retriever 都是之前定义好的）
+
+```python
+from langchain.memory import ConversationBufferMemory
+from langchain.chains import ConversationalRetrievalChain
+
+memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+chain = ConversationalRetrievalChain.from_llm(llm, retriever, memory=memory)
+```
+
+在调用时，将提问作为 question 参数传入 chain
+
+返回的结果会包括 question/chat_history/answer 三部分内容
+
+其中对话历史部分是 ChatHistory 类型，由 SystemMessage/HumanMessage/AIMessage 组成
+
+```python
+query = '请简单地介绍一下虚拟歌手洛天依'
+result = chain({"question": query})
+
+{'question': '请简单地介绍一下虚拟歌手洛天依',
+ 'chat_history': [HumanMessage(content='请简单地介绍一下虚拟歌手洛天依', additional_kwargs={}, example=False),
+  AIMessage(content='洛天依是一个由VOCALOID语音合成引擎软件为基础创造出来的虚拟人物，由真人提供声源，再由软件合成人声，能够让粉丝深度参与共创。从2012年7月12日洛天依出道至今，音乐人以及粉丝已为洛天依创作了超过一万首作品，通过为用户提供更多想象和创作空间的同时，与粉丝建立了更深刻联系。洛天依的出道引起了全球范围内的关注，并成为了许多粉丝的虚拟偶像。', additional_kwargs={}, example=False)],
+ 'answer': '洛天依是一个由VOCALOID语音合成引擎软件为基础创造出来的虚拟人物，由真人提供声源，再由软件合成人声，能够让粉丝深度参与共创。从2012年7月12日洛天依出道至今，音乐人以及粉丝已为洛天依创作了超过一万首作品，通过为用户提供更多想象和创作空间的同时，与粉丝建立了更深刻联系。洛天依的出道引起了全球范围内的关注，并成为了许多粉丝的虚拟偶像。'}
+```
+
+#### 7.3.3 ConversationalRetrievalChain + Source
+
+我们已经使用 chain 实现了基于数据库的问答，并加入了对话历史功能。接下来还可以在返回结果中加上依据的上下文
+
+因此需要在声明 memory 的时候加上 return_messages=True，并指定输出字段 answer 和记忆字段 chat_history。这样就能在回答中加上 source_documents 字段
+
+```python
+memory = ConversationBufferMemory(output_key='answer', memory_key="chat_history", return_messages=True)
+qa = ConversationalRetrievalChain.from_llm(llm, retriever, memory=memory, return_source_documents=True)
+```
+
+```python
+query = '请简单地介绍一下虚拟歌手洛天依'
+result = qa({"question": query})
+
+{'question': '请简单地介绍一下虚拟歌手洛天依',
+ 'chat_history': [HumanMessage(content='请简单地介绍一下虚拟歌手洛天依', additional_kwargs={}, example=False),
+  AIMessage(content='洛天依是一个由VOCALOID语音合成引擎软件为基础创造出来的虚拟人物，由真人提供声源，再由软件合成人声，能够让粉丝深度参与共创。从2012年7月12日洛天依出道至今，音乐人以及粉丝已为洛天依创作了超过一万首作品，通过为用户提供更多想象和创作空间的同时，与粉丝建立了更深刻联系。洛天依的出道引起了全球范围内的关注，并成为了许多粉丝的虚拟偶像。', additional_kwargs={}, example=False)],
+ 'answer': '洛天依是一个由VOCALOID语音合成引擎软件为基础创造出来的虚拟人物，由真人提供声源，再由软件合成人声，能够让粉丝深度参与共创。从2012年7月12日洛天依出道至今，音乐人以及粉丝已为洛天依创作了超过一万首作品，通过为用户提供更多想象和创作空间的同时，与粉丝建立了更深刻联系。洛天依的出道引起了全球范围内的关注，并成为了许多粉丝的虚拟偶像。',
+ 'source_documents': [Document(page_content='VOCALOID语音合成引擎软件为基础创造出来的虚拟人物，由真人提供声源，再由软件合成人声，都是能够让粉丝深度参与共创的虚拟歌手以洛天依为例，任何人通过声库创作词曲，都能达到“洛天依演唱一首歌”的效果从2012年7月12日洛天依出道至今十年的时间内，音乐人以及粉丝已为洛天依创作了超过一万首作品，通过为用户提供更多想象和创作空间的同时，与粉丝建立了更深刻联系二是通过', metadata={'source': '../files/人工智能生成内容白皮书-2022.pdf'}),
+  Document(page_content='如欧莱雅、飞利浦、完美日记等品牌的虚拟主播一般会在凌晨0点上线，并进行近9个小时的直播，与真人主播形成了24小时无缝对接的直播服务二是虚拟化的品牌主播更能加速店铺或品牌年轻化进程，拉近与新消费人群的距离，塑造元宇宙时代的店铺形象，未来可通过延展应用到元宇宙中更多元的虚拟场景，实现多圈层传播如彩妆品牌“卡姿兰”推出自己的品牌虚拟形象，并将其引入直播间作为其天猫旗舰店日常的虚拟主播导购', metadata={'source': '../files/人工智能生成内容白皮书-2022.pdf'})]}
+```
+
+### Todo:
+
+PDF Loader 封装成类
+
+Chromadb新增文件
+
+多轮对话context和history结合，不是只根据context
+
+因为官方的 chain 使用的是英文 prompt，所以要不自己写chain要不自己写prompt
+
+历史记录：modeling_chatglm.py
+
+```python
+RetrievalQAWithSourcesChain
+
+_get_docs
+	get_relevant_documents
+    _reduce_tokens_below_limit
+    
+BaseQAWithSourcesChain       
+
+_call
+	_get_docs
+    combine_documents_chain
+    BaseCombineDocumentsChain
+    	
+```
 
 ## 8. Document QA 详细说明
 
@@ -1065,9 +1322,9 @@ class CustomLLM(LLM):
 
 只有 _call 函数是必须要定义的。通过将字符串输入 _call，返回输出结果
 
-加载模型则需要写入 init 方法或者单独创建一个函数
+加载模型则需要写入 init 方法或者单独创建一个函数，删除模型也需要重载 del 方法
 
-还有 _llm_type, _identifying_params 等方法可以定义
+还有 _llm_type, _identifying_params 等方法可以定义，用于打印模型的信息
 
 
 
@@ -1087,7 +1344,7 @@ class BaseLLM(BaseLanguageModel, ABC):
         """Check Cache and run the LLM on the given prompt and input."""
         return (
             self.generate([prompt], stop=stop, callbacks=callbacks)
-            .generations[0][0]
+            .generations[0][0]111  下
             .text
         )
 # 170
@@ -1134,27 +1391,15 @@ class BaseLLM(BaseLanguageModel, ABC):
             raise ValueError("Unexpected generation type")
 ```
 
-
-
-
-
 ## 9. 草稿区
-
-LangChain + ChatGLM
-
-https://zhuanlan.zhihu.com/p/623004492
-
-https://zhuanlan.zhihu.com/p/622717995
 
 架构图
 
 https://zhuanlan.zhihu.com/p/613842066
 
-Prompt 注入/中间人攻击
+IBM 模型
 
-https://zhuanlan.zhihu.com/p/624139892
-
-https://zhuanlan.zhihu.com/p/624584889
+https://zhuanlan.zhihu.com/p/627449559
 
 ## 10. Prompt（待补充）
 
