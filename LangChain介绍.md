@@ -892,7 +892,7 @@ print(docs)
 
 模型加入对话历史的方式其实很简单，只需要在 prompt 前面加上每一轮的人类输出和AI输出即可。LangChain 官方提供了 Memory 功能，能够自动整合历史记录
 
-使用的时候只需要向 chain 里引入 memory 参数即可11111111111111111
+使用的时候只需要向 chain 里引入 memory 参数即可
 
 ```python
 from langchain.memory import ConversationBufferMemory
@@ -966,30 +966,20 @@ result = qa({"question": query})
 
 ### Todo:
 
-PDF Loader 封装成类
-
-Chromadb新增文件
-
 多轮对话context和history结合，不是只根据context
 
-因为官方的 chain 使用的是英文 prompt，所以要不自己写chain要不自己写prompt
-
-历史记录：modeling_chatglm.py
+因为官方的 chain 使用的是英文 prompt，需要替换prompt
 
 ```python
-RetrievalQAWithSourcesChain
+BaseConversationalRetrievalChain
 
-_get_docs
-	get_relevant_documents
-    _reduce_tokens_below_limit
+	if self.return_source_documents:
+            _output_keys = _output_keys + ["source_documents"]
+	
+    @abstractmethod
+    def _get_docs
     
-BaseQAWithSourcesChain       
-
-_call
-	_get_docs
-    combine_documents_chain
-    BaseCombineDocumentsChain
-    	
+    def _call
 ```
 
 ## 8. Document QA 详细说明

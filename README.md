@@ -16,3 +16,11 @@ DocumentQA.ipynb：使用 LangChain 读取文档进行问答，包括 OpenAI 和
 ChatGLM_QA.ipynb：DocumentQA的简化版，使用本地 ChatGLM 模型结合 LangChain 进行问答
 
 Embedding_text2vec.ipynb：使用 text2vec 对本地 Embedding 模型的测试和可视化
+
+**Todo：**
+
+目前正在更新文档问答的自定义prompt部分（LangChain官方使用的是英文prompt）
+
+后续对 pdf 读取进行优化，加入扫描pdf读取（使用OCR）和优化表格读取
+
+考虑将几个太长的 Notebook 进行拆分，分开多个小部分进行介绍
