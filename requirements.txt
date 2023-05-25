@@ -1,5 +1,5 @@
 langchain
-PyPDF2
+pypdf
 chromadb
 protobuf
 transformers==4.27.1

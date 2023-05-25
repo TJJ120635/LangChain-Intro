@@ -1,26 +1,24 @@
 # LangChain-Intro
 LangChain 的使用教程，基于 LangChain、OpenAI 官方文档与 HappyGO2023/simple-chatpdf 项目
 
-**文档部分：**
+**文档部分：**（推荐阅读顺序）
 
-LangChain介绍.md：整体文档，包括使用 OpenAI 和 ChatGLM 对 LangChain 进行使用，以及 LangChain 相关知识和概念的说明
-
-ChatGLM部署.md：简单部署并跑通ChatGLM
-
-LangChain+ChatGLM部署.md：使用 ChatGLM 进行文档问答，搭配程序进行使用
+1. Text2Vec部署：在本地部署 Text2Vec-Chinese 模型并测试文本向量化
+2. ChatGLM部署：在本地部署 ChatGLM-6b 模型并测试问答
+3. LangChain入门+部署：使用 LangChain 对 PDF 文档进行提取、检索、问答，搭配 OpenAI 模型或本地模型两种方式
+4. LangChain进阶（持续更新）：LangChain 相关知识和概念的说明，文档加载，ChatGLM 使用，自定义 Prompt 替换等
 
 **程序部分：**
 
-DocumentQA.ipynb：使用 LangChain 读取文档进行问答，包括 OpenAI 和 ChatGLM 两种方法
-
-ChatGLM_QA.ipynb：DocumentQA的简化版，使用本地 ChatGLM 模型结合 LangChain 进行问答
-
-Embedding_text2vec.ipynb：使用 text2vec 对本地 Embedding 模型的测试和可视化
+1. text2vec_test.ipynb：部署 Text2Vec-Chinese 后进行简单测试和可视化
+2. chatglm_test.py：部署 ChatGLM 后进行简单测试
+3. LangChain入门.ipynb：搭配 LangChain 入门笔记的简单测试
+4. 文档相关.ipynb：搭配 LangChain 进阶笔记的文档相关操作
+5. ChatGLM 相关.ipynb：搭配 LangChain 进阶笔记的 ChatGLM 相关操作
+6. PDFLoader.py （持续更新）：基于 pypdf 和 TextSplitter 将 PDF 读取和划分封装成头文件
+7. ChatGLM.py（持续更新）： 基于 LLM 将 ChatGLM 封装成类
+8. QAprompt.py（持续更新）：基于 question_answering.stuff_prompt 自定义中文文档问答 prompt
 
 **Todo：**
 
-目前正在更新文档问答的自定义prompt部分（LangChain官方使用的是英文prompt）
-
 后续对 pdf 读取进行优化，加入扫描pdf读取（使用OCR）和优化表格读取
-
-考虑将几个太长的 Notebook 进行拆分，分开多个小部分进行介绍
