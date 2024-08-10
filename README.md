@@ -1,3 +1,7 @@
+**Update:2024/08/10**
+
+**本教程是23年编写的，基于 langchain 0.0x 版本。目前 langchain 已经更新到 0.2 版本，代码结构变化较大，可能部分代码不适用。如果要使用本教程，推荐安装 langchain 0.1 版本入手。**
+
 # LangChain-Intro
 LangChain 的使用教程，基于 LangChain、OpenAI 官方文档与 HappyGO2023/simple-chatpdf 项目
 
